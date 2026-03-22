@@ -87,6 +87,18 @@ style_SE = input.string("Solid", "SE — Style", options=["Solid", "Dashed", "Do
 lineStyle(s) =>
     s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
 
+// ── Auto-snap helper: pick the most prominent wick end ───────────────────
+//    Swing low  = low is lower than both neighbours
+//    Swing high = high is higher than both neighbours
+//    If both or neither are swings, pick the longer wick.
+autoSnap(float h, float l, float o, float c, float pH, float pL, float nH, float nL, bool hasNext) =>
+    bool isSwingLow  = hasNext ? (l < pL and l < nL) : (l < pL)
+    bool isSwingHigh = hasNext ? (h > pH and h > nH) : (h > pH)
+    float upperWick  = h - math.max(o, c)
+    float lowerWick  = math.min(o, c) - l
+    float result     = isSwingLow and not isSwingHigh ? l : isSwingHigh and not isSwingLow ? h : lowerWick >= upperWick ? l : h
+    result
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  FIND ANCHOR BAR INDICES + CAPTURE HIGH/LOW
 //  These run on every bar to capture the correct bar_index and wick data.
@@ -153,19 +165,6 @@ var line raySW = na
 var line raySE = na
 
 if barstate.islast and not na(idx1) and not na(idx2)
-
-    // ── Auto-snap helper: pick the most prominent wick end ─────────────
-    //    Swing low  = low is lower than both neighbours
-    //    Swing high = high is higher than both neighbours
-    //    If both or neither are swings, pick the longer wick.
-    autoSnap(float h, float l, float o, float c, float pH, float pL, float nH, float nL, bool hasNext) =>
-        bool isSwingLow  = hasNext ? (l < pL and l < nL) : (l < pL)
-        bool isSwingHigh = hasNext ? (h > pH and h > nH) : (h > pH)
-        float body_mid   = (o + c) / 2.0
-        float upperWick  = h - math.max(o, c)
-        float lowerWick  = math.min(o, c) - l
-        float result     = isSwingLow and not isSwingHigh ? l : isSwingHigh and not isSwingLow ? h : lowerWick >= upperWick ? l : h
-        result
 
     // ── Resolve anchor prices from selected mode ───────────────────────
     float p1 = priceMode1 == "High" ? highAt1 : priceMode1 == "Low" ? lowAt1 : priceMode1 == "Manual" ? manualP1 : autoSnap(highAt1, lowAt1, openAt1, closeAt1, prevHigh1, prevLow1, nextHigh1, nextLow1, gotNext1)
