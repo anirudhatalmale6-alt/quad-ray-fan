@@ -5,19 +5,26 @@
 indicator("Quad-Ray Fan", overlay=true, max_lines_count=4)
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  ANCHOR POINTS
-//  Click on the chart to place each point when adding the indicator.
-//  Anchor 1 = origin of all four rays.
-//  Anchor 2 = sets the base slope (price-per-bar steepness).
+//  ANCHOR POINTS — just 2 clicks, one per anchor
+//  Click 1 = ray origin.  Click 2 = sets the base slope.
+//  Price is auto-snapped to the nearest wick end (High or Low) of the
+//  clicked candle, or you can override with manual price fields below.
 // ─────────────────────────────────────────────────────────────────────────────
 
-anchor1_time  = input.time(timestamp("2026-01-01T00:00:00"), "Anchor 1 — Time",  confirm=true, group="Anchor Points")
-anchor1_price = input.price(0.0,                             "Anchor 1 — Price", confirm=true, group="Anchor Points")
-anchor2_time  = input.time(timestamp("2026-01-02T00:00:00"), "Anchor 2 — Time",  confirm=true, group="Anchor Points")
-anchor2_price = input.price(0.0,                             "Anchor 2 — Price", confirm=true, group="Anchor Points")
+anchor1_time = input.time(timestamp("2026-01-01T00:00:00"), "Anchor 1 — click on chart", confirm=true, group="Anchor Points")
+anchor2_time = input.time(timestamp("2026-01-02T00:00:00"), "Anchor 2 — click on chart", confirm=true, group="Anchor Points")
 
-// ── Magnetic snap: automatically locks to the nearest wick end (H or L) ────
-snapOn = input.bool(true, "Magnetic snap to nearest wick end", group="Anchor Points")
+// ── Price source for each anchor ───────────────────────────────────────────
+//  "Auto (nearest wick)" = magnetic snap to whichever wick end is closest
+//      to the candle midpoint. For a bearish candle the low is usually
+//      closer to the close, for bullish the high is closer, etc.
+//  "High"  = always use the candle high (wick top)
+//  "Low"   = always use the candle low  (wick bottom)
+//  "Manual" = use the manual price fields below
+priceMode1 = input.string("Low", "Anchor 1 — Price source", options=["High", "Low", "Manual"], group="Anchor Points")
+manualP1   = input.float(0.0, "Anchor 1 — Manual price (if Manual selected)", group="Anchor Points")
+priceMode2 = input.string("Low", "Anchor 2 — Price source", options=["High", "Low", "Manual"], group="Anchor Points")
+manualP2   = input.float(0.0, "Anchor 2 — Manual price (if Manual selected)", group="Anchor Points")
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SLOPE CONTROLS
@@ -81,16 +88,16 @@ lineStyle(s) =>
     s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  FIND ANCHOR BAR INDICES + SNAPPED PRICES
-//  These run on every bar to capture the correct bar_index and high/low.
+//  FIND ANCHOR BAR INDICES + CAPTURE HIGH/LOW
+//  These run on every bar to capture the correct bar_index and wick data.
 // ─────────────────────────────────────────────────────────────────────────────
 
-var int   idx1     = na
-var int   idx2     = na
-var float highAt1  = na
-var float lowAt1   = na
-var float highAt2  = na
-var float lowAt2   = na
+var int   idx1    = na
+var int   idx2    = na
+var float highAt1 = na
+var float lowAt1  = na
+var float highAt2 = na
+var float lowAt2  = na
 
 if time <= anchor1_time
     idx1    := bar_index
@@ -112,12 +119,9 @@ var line raySE = na
 
 if barstate.islast and not na(idx1) and not na(idx2)
 
-    // ── Magnetic snap: lock each anchor to whichever wick end is nearest ─
-    float p1 = anchor1_price
-    float p2 = anchor2_price
-    if snapOn
-        p1 := math.abs(anchor1_price - highAt1) <= math.abs(anchor1_price - lowAt1) ? highAt1 : lowAt1
-        p2 := math.abs(anchor2_price - highAt2) <= math.abs(anchor2_price - lowAt2) ? highAt2 : lowAt2
+    // ── Resolve anchor prices from selected mode ───────────────────────
+    float p1 = priceMode1 == "High" ? highAt1 : priceMode1 == "Manual" ? manualP1 : lowAt1
+    float p2 = priceMode2 == "High" ? highAt2 : priceMode2 == "Manual" ? manualP2 : lowAt2
 
     // ── Base slope: price change per bar between the two anchors ────────
     float dBars     = math.max(math.abs(idx2 - idx1), 1)
@@ -158,7 +162,7 @@ if barstate.islast and not na(idx1) and not na(idx2)
     line.delete(raySW)
     line.delete(raySE)
 
-    // ── Draw the four rays (no extend — endpoints are far enough) ──────
+    // ── Draw the four rays ─────────────────────────────────────────────
     rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_NW, width=width_NW, style=lineStyle(style_NW))
 
@@ -175,16 +179,15 @@ if barstate.islast and not na(idx1) and not na(idx2)
 //  USAGE NOTES
 //
 //  1. Add the indicator to any chart (Indicators → Invite-only / My Scripts).
-//  2. TradingView will immediately ask you to click TWICE on the chart:
-//        First click  → Anchor 1 (ray origin)
-//        Second click → Anchor 2 (sets base steepness)
+//  2. TradingView asks you to click TWICE on the chart:
+//        First click  → Anchor 1 (ray origin candle)
+//        Second click → Anchor 2 (slope reference candle)
 //  3. All four rays appear instantly after the second click.
-//  4. Magnetic snap is ON by default — each anchor automatically locks to
-//     the nearest wick end (High or Low).  Toggle it off in settings if
-//     you need exact-click placement.
+//  4. By default, each anchor snaps to the candle's Low (wick bottom).
+//     Change "Price source" in settings to High, or Manual for exact control.
 //  5. To adjust settings later, click the gear icon on the indicator label
 //     or double-click any ray.  Inputs are grouped into:
-//        • Anchor Points — reposition origins + magnetic snap toggle
+//        • Anchor Points — reposition + price source per anchor
 //        • Slope         — fine-tune each ray's steepness
 //        • Mirror        — toggle symmetry between ray pairs
 //        • NW/NE/SW/SE Ray Style — colour, width, line style
