@@ -2,7 +2,7 @@
 // https://mozilla.org/MPL/2.0/
 
 //@version=5
-indicator("Quad-Ray Fan", overlay=true, max_lines_count=4, max_labels_count=2)
+indicator("Quad-Ray Fan", overlay=true, max_lines_count=4)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ANCHOR POINTS — 2 clicks only (time + price captured per click)
@@ -94,8 +94,6 @@ var line rayNW = na
 var line rayNE = na
 var line raySW = na
 var line raySE = na
-var label lbl1 = na
-var label lbl2 = na
 
 if barstate.islast and not na(idx1) and not na(idx2)
 
@@ -118,7 +116,7 @@ if barstate.islast and not na(idx1) and not na(idx2)
     //    No extend — draw explicit long lines within TradingView limits.
     //    Future: max 499 bars.  Past: capped to bar 0 (no negative indices).
     int futureReach = 499
-    int pastReach   = math.max(idx1, 1)
+    int pastReach   = math.min(499, math.max(idx1, 1))
 
     // NW = left + up,  NE = right + up,  SW = left + down,  SE = right + down
     int   nw_x2 = idx1 - pastReach
@@ -138,8 +136,6 @@ if barstate.islast and not na(idx1) and not na(idx2)
     line.delete(rayNE)
     line.delete(raySW)
     line.delete(raySE)
-    label.delete(lbl1)
-    label.delete(lbl2)
 
     // ── Draw rays (no extend — endpoints define full length) ──────────
     rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
@@ -154,11 +150,7 @@ if barstate.islast and not na(idx1) and not na(idx2)
     raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_SE, width=width_SE, style=lineStyle(style_SE))
 
-    // ── Small labels at anchor points for visual confirmation ─────────
-    lbl1 := label.new(idx1, p1, "A1", xloc=xloc.bar_index, style=label.style_circle,
-         color=color.white, textcolor=color.black, size=size.tiny)
-    lbl2 := label.new(idx2, p2, "A2", xloc=xloc.bar_index, style=label.style_circle,
-         color=color.yellow, textcolor=color.black, size=size.tiny)
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  USAGE
