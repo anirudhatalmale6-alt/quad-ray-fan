@@ -118,9 +118,7 @@ if barstate.islast and not na(idx1) and not na(idx2)
     //    No extend — draw explicit long lines within TradingView limits.
     //    Future: max 499 bars.  Past: capped to bar 0 (no negative indices).
     int futureReach = 499
-    int pastReach   = math.min(499, idx1)
-    if pastReach < 1
-        pastReach := 1
+    int pastReach   = math.max(idx1, 1)
 
     // NW = left + up,  NE = right + up,  SW = left + down,  SE = right + down
     int   nw_x2 = idx1 - pastReach
