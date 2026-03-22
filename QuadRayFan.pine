@@ -114,20 +114,23 @@ if barstate.islast and not na(idx1) and not na(idx2)
     float eff_SW = mirror_h_NW_SW ? slope_NW : slope_SW
     float eff_SE = mirror_h_NE_SE ? (mirror_v_NW_NE ? slope_NW : slope_NE) : (mirror_v_SW_SE ? (mirror_h_NW_SW ? slope_NW : slope_SW) : slope_SE)
 
-    // ── Ray endpoints (large offset to simulate infinite ray) ─────────
-    int reach = 5000
+    // ── Ray endpoints ─────────────────────────────────────────────────
+    //    TradingView limits bar_index drawings to 500 bars into the future.
+    //    Past direction has no such limit.
+    int pastReach   = 5000
+    int futureReach = 499
 
-    int   nw_x2 = idx1 - reach
-    float nw_y2 = p1 + baseSlope * eff_NW * reach
+    int   nw_x2 = idx1 - pastReach
+    float nw_y2 = p1 + baseSlope * eff_NW * pastReach
 
-    int   ne_x2 = idx1 + reach
-    float ne_y2 = p1 + baseSlope * eff_NE * reach
+    int   ne_x2 = idx1 + futureReach
+    float ne_y2 = p1 + baseSlope * eff_NE * futureReach
 
-    int   sw_x2 = idx1 - reach
-    float sw_y2 = p1 - baseSlope * eff_SW * reach
+    int   sw_x2 = idx1 - pastReach
+    float sw_y2 = p1 - baseSlope * eff_SW * pastReach
 
-    int   se_x2 = idx1 + reach
-    float se_y2 = p1 - baseSlope * eff_SE * reach
+    int   se_x2 = idx1 + futureReach
+    float se_y2 = p1 - baseSlope * eff_SE * futureReach
 
     // ── Clean up old drawings ─────────────────────────────────────────
     line.delete(rayNW)
