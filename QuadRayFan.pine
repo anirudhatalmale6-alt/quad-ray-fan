@@ -16,6 +16,10 @@ anchor1_price = input.price(0.0,                             "Anchor 1 — Price
 anchor2_time  = input.time(timestamp("2026-01-02T00:00:00"), "Anchor 2 — Time",  confirm=true, group="Anchor Points")
 anchor2_price = input.price(0.0,                             "Anchor 2 — Price", confirm=true, group="Anchor Points")
 
+// ── Snap anchors to candle High or Low (wick tips) instead of click price ──
+snap1 = input.string("Exact click", "Anchor 1 — Snap to", options=["Exact click", "High (wick top)", "Low (wick bottom)"], group="Anchor Points")
+snap2 = input.string("Exact click", "Anchor 2 — Snap to", options=["Exact click", "High (wick top)", "Low (wick bottom)"], group="Anchor Points")
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  SLOPE CONTROLS
 //  Each value is a multiplier applied to the base slope derived from the two
@@ -78,18 +82,25 @@ lineStyle(s) =>
     s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  FIND ANCHOR BAR INDICES
-//  ta.valuewhen must execute on every bar (not inside an if-block).
+//  FIND ANCHOR BAR INDICES + SNAPPED PRICES
+//  These run on every bar to capture the correct bar_index and high/low.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Track the closest bar at-or-before each anchor time
-var int idx1 = na
-var int idx2 = na
+var int   idx1     = na
+var int   idx2     = na
+var float highAt1  = na
+var float lowAt1   = na
+var float highAt2  = na
+var float lowAt2   = na
 
 if time <= anchor1_time
-    idx1 := bar_index
+    idx1    := bar_index
+    highAt1 := high
+    lowAt1  := low
 if time <= anchor2_time
-    idx2 := bar_index
+    idx2    := bar_index
+    highAt2 := high
+    lowAt2  := low
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DRAW RAYS — executes once on the last (real-time) bar
@@ -102,9 +113,13 @@ var line raySE = na
 
 if barstate.islast and not na(idx1) and not na(idx2)
 
+    // ── Resolve snapped anchor prices ──────────────────────────────────
+    float p1 = snap1 == "High (wick top)" ? highAt1 : snap1 == "Low (wick bottom)" ? lowAt1 : anchor1_price
+    float p2 = snap2 == "High (wick top)" ? highAt2 : snap2 == "Low (wick bottom)" ? lowAt2 : anchor2_price
+
     // ── Base slope: price change per bar between the two anchors ────────
-    float dBars    = math.max(math.abs(idx2 - idx1), 1)
-    float dPrice   = math.abs(anchor2_price - anchor1_price)
+    float dBars     = math.max(math.abs(idx2 - idx1), 1)
+    float dPrice    = math.abs(p2 - p1)
     float baseSlope = dPrice / dBars
 
     // ── Effective slope multipliers after mirror logic ──────────────────
@@ -114,27 +129,26 @@ if barstate.islast and not na(idx1) and not na(idx2)
     // SE can be driven by either mirror chain
     float eff_SE = mirror_h_NE_SE ? (mirror_v_NW_NE ? slope_NW : slope_NE) : (mirror_v_SW_SE ? (mirror_h_NW_SW ? slope_NW : slope_SW) : slope_SE)
 
-    // ── Direction offset (small step to define each ray's direction) ────
-    //    The extend parameter makes the line infinite past the 2nd point.
-    int step = int(math.max(dBars, 10))
+    // ── Large reach so lines act as rays across the visible chart ──────
+    int reach = 5000
 
-    float p1 = anchor1_price
+    // ── Compute end points for each ray ────────────────────────────────
+    //    NW = backward in time (left), upward in price
+    //    NE = forward in time (right), upward in price
+    //    SW = backward in time (left), downward in price
+    //    SE = forward in time (right), downward in price
 
-    // NW = backward in time, upward in price
-    int   nw_x2 = idx1 - step
-    float nw_y2 = p1 + baseSlope * eff_NW * step
+    int   nw_x2 = idx1 - reach
+    float nw_y2 = p1 + baseSlope * eff_NW * reach
 
-    // NE = forward in time, upward in price
-    int   ne_x2 = idx1 + step
-    float ne_y2 = p1 + baseSlope * eff_NE * step
+    int   ne_x2 = idx1 + reach
+    float ne_y2 = p1 + baseSlope * eff_NE * reach
 
-    // SW = backward in time, downward in price
-    int   sw_x2 = idx1 - step
-    float sw_y2 = p1 - baseSlope * eff_SW * step
+    int   sw_x2 = idx1 - reach
+    float sw_y2 = p1 - baseSlope * eff_SW * reach
 
-    // SE = forward in time, downward in price
-    int   se_x2 = idx1 + step
-    float se_y2 = p1 - baseSlope * eff_SE * step
+    int   se_x2 = idx1 + reach
+    float se_y2 = p1 - baseSlope * eff_SE * reach
 
     // ── Delete previous lines to avoid duplicates on each tick ──────────
     line.delete(rayNW)
@@ -142,19 +156,17 @@ if barstate.islast and not na(idx1) and not na(idx2)
     line.delete(raySW)
     line.delete(raySE)
 
-    // ── Draw the four rays ────────────────────────────────────────────
-    //    extend.left  = extends toward the past  (for NW & SW rays)
-    //    extend.right = extends toward the future (for NE & SE rays)
-    rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.left,
+    // ── Draw the four rays (no extend — endpoints are far enough) ──────
+    rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_NW, width=width_NW, style=lineStyle(style_NW))
 
-    rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.right,
+    rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_NE, width=width_NE, style=lineStyle(style_NE))
 
-    raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.left,
+    raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_SW, width=width_SW, style=lineStyle(style_SW))
 
-    raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.right,
+    raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_SE, width=width_SE, style=lineStyle(style_SE))
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,9 +177,11 @@ if barstate.islast and not na(idx1) and not na(idx2)
 //        First click  → Anchor 1 (ray origin)
 //        Second click → Anchor 2 (sets base steepness)
 //  3. All four rays appear instantly after the second click.
-//  4. To adjust settings later, click the gear icon on the indicator label
+//  4. To snap an anchor to a candle's wick tip instead of the exact click
+//     location, change "Anchor N — Snap to" to "High" or "Low" in settings.
+//  5. To adjust settings later, click the gear icon on the indicator label
 //     or double-click any ray.  Inputs are grouped into:
-//        • Anchor Points — reposition origins
+//        • Anchor Points — reposition origins + snap-to-wick option
 //        • Slope         — fine-tune each ray's steepness
 //        • Mirror        — toggle symmetry between ray pairs
 //        • NW/NE/SW/SE Ray Style — colour, width, line style
