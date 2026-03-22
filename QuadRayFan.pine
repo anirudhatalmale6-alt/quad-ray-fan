@@ -115,10 +115,9 @@ if barstate.islast and not na(idx1) and not na(idx2)
     float eff_SE = mirror_h_NE_SE ? (mirror_v_NW_NE ? slope_NW : slope_NE) : (mirror_v_SW_SE ? (mirror_h_NW_SW ? slope_NW : slope_SW) : slope_SE)
 
     // ── Ray endpoints ─────────────────────────────────────────────────
-    //    TradingView limits bar_index drawings to 500 bars into the future.
-    //    Past direction has no such limit.
-    int pastReach   = 5000
+    //    TradingView limits: max 500 bars future, and bar_index >= 0 for past.
     int futureReach = 499
+    int pastReach   = math.max(idx1, 10)
 
     int   nw_x2 = idx1 - pastReach
     float nw_y2 = p1 + baseSlope * eff_NW * pastReach
