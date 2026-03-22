@@ -5,33 +5,24 @@
 indicator("Quad-Ray Fan", overlay=true, max_lines_count=4)
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  ANCHOR POINTS — just 2 clicks, one per anchor
-//  Click 1 = ray origin.  Click 2 = sets the base slope.
-//  Price is auto-snapped to the nearest wick end (High or Low) of the
-//  clicked candle, or you can override with manual price fields below.
+//  ANCHOR POINTS — 2 clicks total (1 per anchor)
+//  Each click captures both time and price in one go.
+//  Magnetic snap then locks to the nearest wick end (High or Low).
 // ─────────────────────────────────────────────────────────────────────────────
 
-anchor1_time = input.time(timestamp("2026-01-01T00:00:00"), "Anchor 1 — click on chart", confirm=true, group="Anchor Points")
-anchor2_time = input.time(timestamp("2026-01-02T00:00:00"), "Anchor 2 — click on chart", confirm=true, group="Anchor Points")
+anchor1_time  = input.time(timestamp("2026-01-01T00:00:00"), "Anchor 1",  confirm=true, group="Anchor Points")
+anchor1_price = input.price(0.0,                             "",          confirm=true, group="Anchor Points")
+anchor2_time  = input.time(timestamp("2026-01-02T00:00:00"), "Anchor 2",  confirm=true, group="Anchor Points")
+anchor2_price = input.price(0.0,                             "",          confirm=true, group="Anchor Points")
 
-// ── Price source for each anchor ───────────────────────────────────────────
-//  "Auto (nearest wick)" = picks the most prominent wick end automatically.
-//      If the low is a swing low (lower than its neighbours) it picks Low.
-//      If the high is a swing high it picks High. If both, picks the longer wick.
-//  "High"   = always use the candle high (wick top)
-//  "Low"    = always use the candle low  (wick bottom)
-//  "Manual" = use the manual price fields below
-priceMode1 = input.string("Auto (nearest wick)", "Anchor 1 — Price source", options=["Auto (nearest wick)", "High", "Low", "Manual"], group="Anchor Points")
-manualP1   = input.float(0.0, "Anchor 1 — Manual price (if Manual)", group="Anchor Points")
-priceMode2 = input.string("Auto (nearest wick)", "Anchor 2 — Price source", options=["Auto (nearest wick)", "High", "Low", "Manual"], group="Anchor Points")
-manualP2   = input.float(0.0, "Anchor 2 — Manual price (if Manual)", group="Anchor Points")
+// ── Magnetic snap: locks each anchor to the nearest wick end ───────────────
+snapOn = input.bool(true, "Magnetic snap to nearest wick", group="Anchor Points")
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SLOPE CONTROLS
 //  Each value is a multiplier applied to the base slope derived from the two
 //  anchor points.  1.0 = same steepness as the anchor-to-anchor line.
 //  0.5 = half as steep, 2.0 = twice as steep, etc.
-//  Sign is handled automatically per quadrant — just use positive numbers.
 // ─────────────────────────────────────────────────────────────────────────────
 
 slope_NW = input.float(1.0, "NW Ray — Slope multiplier", minval=0.01, step=0.05, group="Slope")
@@ -41,18 +32,6 @@ slope_SE = input.float(1.0, "SE Ray — Slope multiplier", minval=0.01, step=0.0
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  MIRROR TOGGLES
-//
-//  Horizontal mirror (around a horizontal line through Anchor 1):
-//      NW ↔ SW : when enabled, SW copies NW's slope so both rays are
-//                symmetric above/below the horizontal.
-//      NE ↔ SE : when enabled, SE copies NE's slope.
-//
-//  Vertical mirror (around a vertical line through Anchor 1):
-//      NW ↔ NE : when enabled, NE copies NW's slope so both rays are
-//                symmetric left/right of the vertical.
-//      SW ↔ SE : when enabled, SE copies SW's slope.
-//
-//  When a mirror is active the dependent ray ignores its own slope input.
 // ─────────────────────────────────────────────────────────────────────────────
 
 mirror_h_NW_SW = input.bool(false, "Mirror NW / SW  (horizontal — SW copies NW slope)", group="Mirror")
@@ -81,79 +60,35 @@ width_SE = input.int(2, "SE — Width", minval=1, maxval=10, group="SE Ray Style
 style_SE = input.string("Solid", "SE — Style", options=["Solid", "Dashed", "Dotted"], group="SE Ray Style")
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  HELPER — convert style string → line.style_* constant
+//  HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
 lineStyle(s) =>
     s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
 
-// ── Auto-snap helper: pick the most prominent wick end ───────────────────
-//    Swing low  = low is lower than both neighbours
-//    Swing high = high is higher than both neighbours
-//    If both or neither are swings, pick the longer wick.
-autoSnap(float h, float l, float o, float c, float pH, float pL, float nH, float nL, bool hasNext) =>
-    bool isSwingLow  = hasNext ? (l < pL and l < nL) : (l < pL)
-    bool isSwingHigh = hasNext ? (h > pH and h > nH) : (h > pH)
-    float upperWick  = h - math.max(o, c)
-    float lowerWick  = math.min(o, c) - l
-    float result     = isSwingLow and not isSwingHigh ? l : isSwingHigh and not isSwingLow ? h : lowerWick >= upperWick ? l : h
-    result
+// Magnetic snap: return whichever wick end (H or L) is closest to clickPrice
+magSnap(float clickPrice, float h, float l) =>
+    math.abs(clickPrice - h) <= math.abs(clickPrice - l) ? h : l
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  FIND ANCHOR BAR INDICES + CAPTURE HIGH/LOW
-//  These run on every bar to capture the correct bar_index and wick data.
 // ─────────────────────────────────────────────────────────────────────────────
 
 var int   idx1    = na
 var int   idx2    = na
 var float highAt1 = na
 var float lowAt1  = na
-var float openAt1 = na
-var float closeAt1 = na
 var float highAt2 = na
 var float lowAt2  = na
-var float openAt2 = na
-var float closeAt2 = na
-
-// Also capture the previous bar's H/L for swing detection
-var float prevHigh1 = na
-var float prevLow1  = na
-var float prevHigh2 = na
-var float prevLow2  = na
 
 if time <= anchor1_time
-    prevHigh1 := highAt1
-    prevLow1  := lowAt1
-    idx1      := bar_index
-    highAt1   := high
-    lowAt1    := low
-    openAt1   := open
-    closeAt1  := close
+    idx1    := bar_index
+    highAt1 := high
+    lowAt1  := low
 if time <= anchor2_time
-    prevHigh2 := highAt2
-    prevLow2  := lowAt2
-    idx2      := bar_index
-    highAt2   := high
-    lowAt2    := low
-    openAt2   := open
-    closeAt2  := close
-
-// Capture the bar AFTER each anchor for swing detection (next bar's H/L)
-var float nextHigh1 = na
-var float nextLow1  = na
-var float nextHigh2 = na
-var float nextLow2  = na
-var bool  gotNext1  = false
-var bool  gotNext2  = false
-
-if not na(idx1) and bar_index == idx1 + 1
-    nextHigh1 := high
-    nextLow1  := low
-    gotNext1  := true
-if not na(idx2) and bar_index == idx2 + 1
-    nextHigh2 := high
-    nextLow2  := low
-    gotNext2  := true
+    idx2    := bar_index
+    highAt2 := high
+    lowAt2  := low
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DRAW RAYS — executes once on the last (real-time) bar
@@ -166,9 +101,11 @@ var line raySE = na
 
 if barstate.islast and not na(idx1) and not na(idx2)
 
-    // ── Resolve anchor prices from selected mode ───────────────────────
-    float p1 = priceMode1 == "High" ? highAt1 : priceMode1 == "Low" ? lowAt1 : priceMode1 == "Manual" ? manualP1 : autoSnap(highAt1, lowAt1, openAt1, closeAt1, prevHigh1, prevLow1, nextHigh1, nextLow1, gotNext1)
-    float p2 = priceMode2 == "High" ? highAt2 : priceMode2 == "Low" ? lowAt2 : priceMode2 == "Manual" ? manualP2 : autoSnap(highAt2, lowAt2, openAt2, closeAt2, prevHigh2, prevLow2, nextHigh2, nextLow2, gotNext2)
+    // ── Resolve anchor prices ────────────────────────────────────────────
+    //    With snap ON: click price determines which wick to lock to
+    //    With snap OFF: use exact click price as-is
+    float p1 = snapOn ? magSnap(anchor1_price, highAt1, lowAt1) : anchor1_price
+    float p2 = snapOn ? magSnap(anchor2_price, highAt2, lowAt2) : anchor2_price
 
     // ── Base slope: price change per bar between the two anchors ────────
     float dBars     = math.max(math.abs(idx2 - idx1), 1)
@@ -179,18 +116,12 @@ if barstate.islast and not na(idx1) and not na(idx2)
     float eff_NW = slope_NW
     float eff_NE = mirror_v_NW_NE ? slope_NW : slope_NE
     float eff_SW = mirror_h_NW_SW ? slope_NW : slope_SW
-    // SE can be driven by either mirror chain
     float eff_SE = mirror_h_NE_SE ? (mirror_v_NW_NE ? slope_NW : slope_NE) : (mirror_v_SW_SE ? (mirror_h_NW_SW ? slope_NW : slope_SW) : slope_SE)
 
     // ── Large reach so lines act as rays across the visible chart ──────
     int reach = 5000
 
     // ── Compute end points for each ray ────────────────────────────────
-    //    NW = backward in time (left), upward in price
-    //    NE = forward in time (right), upward in price
-    //    SW = backward in time (left), downward in price
-    //    SE = forward in time (right), downward in price
-
     int   nw_x2 = idx1 - reach
     float nw_y2 = p1 + baseSlope * eff_NW * reach
 
@@ -225,18 +156,14 @@ if barstate.islast and not na(idx1) and not na(idx2)
 // ─────────────────────────────────────────────────────────────────────────────
 //  USAGE NOTES
 //
-//  1. Add the indicator to any chart (Indicators → Invite-only / My Scripts).
+//  1. Add the indicator to any chart (Pine Editor → Add to chart).
 //  2. TradingView asks you to click TWICE on the chart:
-//        First click  → Anchor 1 (ray origin candle)
-//        Second click → Anchor 2 (slope reference candle)
-//  3. All four rays appear instantly after the second click.
-//  4. By default, each anchor snaps to the candle's Low (wick bottom).
-//     Change "Price source" in settings to High, or Manual for exact control.
-//  5. To adjust settings later, click the gear icon on the indicator label
-//     or double-click any ray.  Inputs are grouped into:
-//        • Anchor Points — reposition + price source per anchor
-//        • Slope         — fine-tune each ray's steepness
-//        • Mirror        — toggle symmetry between ray pairs
-//        • NW/NE/SW/SE Ray Style — colour, width, line style
+//        First click  → Anchor 1 (ray origin)
+//        Second click → Anchor 2 (slope reference)
+//     Each click captures both time AND price in one go.
+//  3. Magnetic snap (ON by default) locks each anchor to whichever wick
+//     end (High or Low) is closest to where you clicked. Click near the
+//     bottom wick → snaps to Low. Click near the top wick → snaps to High.
+//  4. To adjust settings later, click the gear icon on the indicator label.
 //
 // ─────────────────────────────────────────────────────────────────────────────
