@@ -16,9 +16,8 @@ anchor1_price = input.price(0.0,                             "Anchor 1 — Price
 anchor2_time  = input.time(timestamp("2026-01-02T00:00:00"), "Anchor 2 — Time",  confirm=true, group="Anchor Points")
 anchor2_price = input.price(0.0,                             "Anchor 2 — Price", confirm=true, group="Anchor Points")
 
-// ── Snap anchors to candle High or Low (wick tips) instead of click price ──
-snap1 = input.string("Exact click", "Anchor 1 — Snap to", options=["Exact click", "High (wick top)", "Low (wick bottom)"], group="Anchor Points")
-snap2 = input.string("Exact click", "Anchor 2 — Snap to", options=["Exact click", "High (wick top)", "Low (wick bottom)"], group="Anchor Points")
+// ── Magnetic snap: automatically locks to the nearest wick end (H or L) ────
+snapOn = input.bool(true, "Magnetic snap to nearest wick end", group="Anchor Points")
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SLOPE CONTROLS
@@ -113,9 +112,12 @@ var line raySE = na
 
 if barstate.islast and not na(idx1) and not na(idx2)
 
-    // ── Resolve snapped anchor prices ──────────────────────────────────
-    float p1 = snap1 == "High (wick top)" ? highAt1 : snap1 == "Low (wick bottom)" ? lowAt1 : anchor1_price
-    float p2 = snap2 == "High (wick top)" ? highAt2 : snap2 == "Low (wick bottom)" ? lowAt2 : anchor2_price
+    // ── Magnetic snap: lock each anchor to whichever wick end is nearest ─
+    float p1 = anchor1_price
+    float p2 = anchor2_price
+    if snapOn
+        p1 := math.abs(anchor1_price - highAt1) <= math.abs(anchor1_price - lowAt1) ? highAt1 : lowAt1
+        p2 := math.abs(anchor2_price - highAt2) <= math.abs(anchor2_price - lowAt2) ? highAt2 : lowAt2
 
     // ── Base slope: price change per bar between the two anchors ────────
     float dBars     = math.max(math.abs(idx2 - idx1), 1)
@@ -177,11 +179,12 @@ if barstate.islast and not na(idx1) and not na(idx2)
 //        First click  → Anchor 1 (ray origin)
 //        Second click → Anchor 2 (sets base steepness)
 //  3. All four rays appear instantly after the second click.
-//  4. To snap an anchor to a candle's wick tip instead of the exact click
-//     location, change "Anchor N — Snap to" to "High" or "Low" in settings.
+//  4. Magnetic snap is ON by default — each anchor automatically locks to
+//     the nearest wick end (High or Low).  Toggle it off in settings if
+//     you need exact-click placement.
 //  5. To adjust settings later, click the gear icon on the indicator label
 //     or double-click any ray.  Inputs are grouped into:
-//        • Anchor Points — reposition origins + snap-to-wick option
+//        • Anchor Points — reposition origins + magnetic snap toggle
 //        • Slope         — fine-tune each ray's steepness
 //        • Mirror        — toggle symmetry between ray pairs
 //        • NW/NE/SW/SE Ray Style — colour, width, line style
