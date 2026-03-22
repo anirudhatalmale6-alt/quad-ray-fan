@@ -115,21 +115,25 @@ if barstate.islast and not na(idx1) and not na(idx2)
     float eff_SE = mirror_h_NE_SE ? (mirror_v_NW_NE ? slope_NW : slope_NE) : (mirror_v_SW_SE ? (mirror_h_NW_SW ? slope_NW : slope_SW) : slope_SE)
 
     // ── Ray endpoints ─────────────────────────────────────────────────
-    //    Use a small step for direction, let extend handle the rest.
-    //    Step of 10 bars defines direction; extend makes it infinite.
-    int step = 10
+    //    No extend — draw explicit long lines within TradingView limits.
+    //    Future: max 499 bars.  Past: capped to bar 0 (no negative indices).
+    int futureReach = 499
+    int pastReach   = math.min(499, idx1)
+    if pastReach < 1
+        pastReach := 1
 
-    int   nw_x2 = idx1 - step
-    float nw_y2 = p1 + baseSlope * eff_NW * step
+    // NW = left + up,  NE = right + up,  SW = left + down,  SE = right + down
+    int   nw_x2 = idx1 - pastReach
+    float nw_y2 = p1 + baseSlope * eff_NW * pastReach
 
-    int   ne_x2 = idx1 + step
-    float ne_y2 = p1 + baseSlope * eff_NE * step
+    int   ne_x2 = idx1 + futureReach
+    float ne_y2 = p1 + baseSlope * eff_NE * futureReach
 
-    int   sw_x2 = idx1 - step
-    float sw_y2 = p1 - baseSlope * eff_SW * step
+    int   sw_x2 = idx1 - pastReach
+    float sw_y2 = p1 - baseSlope * eff_SW * pastReach
 
-    int   se_x2 = idx1 + step
-    float se_y2 = p1 - baseSlope * eff_SE * step
+    int   se_x2 = idx1 + futureReach
+    float se_y2 = p1 - baseSlope * eff_SE * futureReach
 
     // ── Clean up old drawings ─────────────────────────────────────────
     line.delete(rayNW)
@@ -139,21 +143,17 @@ if barstate.islast and not na(idx1) and not na(idx2)
     label.delete(lbl1)
     label.delete(lbl2)
 
-    // ── Draw rays ─────────────────────────────────────────────────────
-    //    extend.left  = extends past the LEFTMOST  point (smallest bar_index)
-    //    extend.right = extends past the RIGHTMOST point (largest bar_index)
-    //    NW/SW go left  → extend.left  extends past x2 (the left point)
-    //    NE/SE go right → extend.right extends past x2 (the right point)
-    rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.left,
+    // ── Draw rays (no extend — endpoints define full length) ──────────
+    rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_NW, width=width_NW, style=lineStyle(style_NW))
 
-    rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.right,
+    rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_NE, width=width_NE, style=lineStyle(style_NE))
 
-    raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.left,
+    raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_SW, width=width_SW, style=lineStyle(style_SW))
 
-    raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.right,
+    raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_SE, width=width_SE, style=lineStyle(style_SE))
 
     // ── Small labels at anchor points for visual confirmation ─────────
