@@ -27,6 +27,13 @@ slope_SW = input.float(1.0, "SW Ray — Slope multiplier", minval=0.01, step=0.0
 slope_SE = input.float(1.0, "SE Ray — Slope multiplier", minval=0.01, step=0.05, group="Slope")
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  RAY LENGTH
+// ─────────────────────────────────────────────────────────────────────────────
+
+rayLength = input.int(499, "Ray length (bars)", minval=10, maxval=499, step=10, group="Ray Length",
+     tooltip="How many bars each ray extends. Max 499 (TradingView limit for future rays). Past rays are also capped here to keep them visible — increase if NW/SW rays disappear.")
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  MIRROR TOGGLES
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -115,8 +122,8 @@ if barstate.islast and not na(idx1) and not na(idx2)
     // ── Ray endpoints ─────────────────────────────────────────────────
     //    No extend — draw explicit long lines within TradingView limits.
     //    Future: max 499 bars.  Past: capped to bar 0 (no negative indices).
-    int futureReach = 499
-    int pastReach   = math.min(499, math.max(idx1, 1))
+    int futureReach = rayLength
+    int pastReach   = math.min(rayLength, math.max(idx1, 1))
 
     // NW = left + up,  NE = right + up,  SW = left + down,  SE = right + down
     int   nw_x2 = idx1 - pastReach
