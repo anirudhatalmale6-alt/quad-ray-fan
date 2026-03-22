@@ -140,16 +140,17 @@ if barstate.islast and not na(idx1) and not na(idx2)
     label.delete(lbl2)
 
     // ── Draw rays ─────────────────────────────────────────────────────
-    //    extend.right extends the line past x2 (the second point).
-    //    For NW/SW, x2 is to the LEFT  → extends further left.  Good.
-    //    For NE/SE, x2 is to the RIGHT → extends further right. Good.
-    rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.right,
+    //    extend.left  = extends past the LEFTMOST  point (smallest bar_index)
+    //    extend.right = extends past the RIGHTMOST point (largest bar_index)
+    //    NW/SW go left  → extend.left  extends past x2 (the left point)
+    //    NE/SE go right → extend.right extends past x2 (the right point)
+    rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.left,
          color=col_NW, width=width_NW, style=lineStyle(style_NW))
 
     rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.right,
          color=col_NE, width=width_NE, style=lineStyle(style_NE))
 
-    raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.right,
+    raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.left,
          color=col_SW, width=width_SW, style=lineStyle(style_SW))
 
     raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.right,
