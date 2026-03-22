@@ -1,28 +1,24 @@
 // This Pine Script™ is subject to the terms of the Mozilla Public License 2.0
 // https://mozilla.org/MPL/2.0/
 
-//@version=6
-indicator("Quad-Ray Fan", overlay=true, max_lines_count=4)
+//@version=5
+indicator("Quad-Ray Fan", overlay=true, max_lines_count=4, max_labels_count=2)
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  ANCHOR POINTS — 2 clicks total (1 per anchor)
-//  Each click captures both time and price in one go.
-//  Magnetic snap then locks to the nearest wick end (High or Low).
+//  ANCHOR POINTS — 2 clicks only (time + price captured per click)
+//  The input.time and input.price pairs merge into a single click each.
 // ─────────────────────────────────────────────────────────────────────────────
 
-anchor1_time  = input.time(timestamp("2026-01-01T00:00:00"), "Anchor 1",  confirm=true, group="Anchor Points")
-anchor1_price = input.price(0.0,                             "",          confirm=true, group="Anchor Points")
-anchor2_time  = input.time(timestamp("2026-01-02T00:00:00"), "Anchor 2",  confirm=true, group="Anchor Points")
-anchor2_price = input.price(0.0,                             "",          confirm=true, group="Anchor Points")
+anchor1_time  = input.time(timestamp("2099-12-31"), "Anchor 1", confirm=true, inline="a1", group="Anchors")
+anchor1_price = input.price(0.0, "", confirm=true, inline="a1", group="Anchors")
+anchor2_time  = input.time(timestamp("2099-12-31"), "Anchor 2", confirm=true, inline="a2", group="Anchors")
+anchor2_price = input.price(0.0, "", confirm=true, inline="a2", group="Anchors")
 
-// ── Magnetic snap: locks each anchor to the nearest wick end ───────────────
-snapOn = input.bool(true, "Magnetic snap to nearest wick", group="Anchor Points")
+// ── Magnetic snap: locks to whichever wick end is nearest to click ─────────
+snapOn = input.bool(true, "Magnetic snap to nearest wick", group="Anchors")
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  SLOPE CONTROLS
-//  Each value is a multiplier applied to the base slope derived from the two
-//  anchor points.  1.0 = same steepness as the anchor-to-anchor line.
-//  0.5 = half as steep, 2.0 = twice as steep, etc.
 // ─────────────────────────────────────────────────────────────────────────────
 
 slope_NW = input.float(1.0, "NW Ray — Slope multiplier", minval=0.01, step=0.05, group="Slope")
@@ -34,13 +30,13 @@ slope_SE = input.float(1.0, "SE Ray — Slope multiplier", minval=0.01, step=0.0
 //  MIRROR TOGGLES
 // ─────────────────────────────────────────────────────────────────────────────
 
-mirror_h_NW_SW = input.bool(false, "Mirror NW / SW  (horizontal — SW copies NW slope)", group="Mirror")
-mirror_h_NE_SE = input.bool(false, "Mirror NE / SE  (horizontal — SE copies NE slope)", group="Mirror")
-mirror_v_NW_NE = input.bool(false, "Mirror NW / NE  (vertical   — NE copies NW slope)", group="Mirror")
-mirror_v_SW_SE = input.bool(false, "Mirror SW / SE  (vertical   — SE copies SW slope)", group="Mirror")
+mirror_h_NW_SW = input.bool(false, "Mirror NW / SW  (horizontal)", group="Mirror")
+mirror_h_NE_SE = input.bool(false, "Mirror NE / SE  (horizontal)", group="Mirror")
+mirror_v_NW_NE = input.bool(false, "Mirror NW / NE  (vertical)", group="Mirror")
+mirror_v_SW_SE = input.bool(false, "Mirror SW / SE  (vertical)", group="Mirror")
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  RAY APPEARANCE — colour, width & style for each ray
+//  RAY APPEARANCE
 // ─────────────────────────────────────────────────────────────────────────────
 
 col_NW   = input.color(color.red,    "NW — Colour", group="NW Ray Style")
@@ -66,12 +62,11 @@ style_SE = input.string("Solid", "SE — Style", options=["Solid", "Dashed", "Do
 lineStyle(s) =>
     s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
 
-// Magnetic snap: return whichever wick end (H or L) is closest to clickPrice
 magSnap(float clickPrice, float h, float l) =>
     math.abs(clickPrice - h) <= math.abs(clickPrice - l) ? h : l
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  FIND ANCHOR BAR INDICES + CAPTURE HIGH/LOW
+//  FIND ANCHOR BARS — runs on every bar
 // ─────────────────────────────────────────────────────────────────────────────
 
 var int   idx1    = na
@@ -85,43 +80,43 @@ if time <= anchor1_time
     idx1    := bar_index
     highAt1 := high
     lowAt1  := low
+
 if time <= anchor2_time
     idx2    := bar_index
     highAt2 := high
     lowAt2  := low
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  DRAW RAYS — executes once on the last (real-time) bar
+//  DRAW RAYS
 // ─────────────────────────────────────────────────────────────────────────────
 
 var line rayNW = na
 var line rayNE = na
 var line raySW = na
 var line raySE = na
+var label lbl1 = na
+var label lbl2 = na
 
 if barstate.islast and not na(idx1) and not na(idx2)
 
     // ── Resolve anchor prices ────────────────────────────────────────────
-    //    With snap ON: click price determines which wick to lock to
-    //    With snap OFF: use exact click price as-is
     float p1 = snapOn ? magSnap(anchor1_price, highAt1, lowAt1) : anchor1_price
     float p2 = snapOn ? magSnap(anchor2_price, highAt2, lowAt2) : anchor2_price
 
-    // ── Base slope: price change per bar between the two anchors ────────
+    // ── Base slope ─────────────────────────────────────────────────────
     float dBars     = math.max(math.abs(idx2 - idx1), 1)
     float dPrice    = math.abs(p2 - p1)
     float baseSlope = dPrice / dBars
 
-    // ── Effective slope multipliers after mirror logic ──────────────────
+    // ── Mirror logic ──────────────────────────────────────────────────
     float eff_NW = slope_NW
     float eff_NE = mirror_v_NW_NE ? slope_NW : slope_NE
     float eff_SW = mirror_h_NW_SW ? slope_NW : slope_SW
     float eff_SE = mirror_h_NE_SE ? (mirror_v_NW_NE ? slope_NW : slope_NE) : (mirror_v_SW_SE ? (mirror_h_NW_SW ? slope_NW : slope_SW) : slope_SE)
 
-    // ── Large reach so lines act as rays across the visible chart ──────
+    // ── Ray endpoints (large offset to simulate infinite ray) ─────────
     int reach = 5000
 
-    // ── Compute end points for each ray ────────────────────────────────
     int   nw_x2 = idx1 - reach
     float nw_y2 = p1 + baseSlope * eff_NW * reach
 
@@ -134,13 +129,15 @@ if barstate.islast and not na(idx1) and not na(idx2)
     int   se_x2 = idx1 + reach
     float se_y2 = p1 - baseSlope * eff_SE * reach
 
-    // ── Delete previous lines to avoid duplicates on each tick ──────────
+    // ── Clean up old drawings ─────────────────────────────────────────
     line.delete(rayNW)
     line.delete(rayNE)
     line.delete(raySW)
     line.delete(raySE)
+    label.delete(lbl1)
+    label.delete(lbl2)
 
-    // ── Draw the four rays ─────────────────────────────────────────────
+    // ── Draw rays ─────────────────────────────────────────────────────
     rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_NW, width=width_NW, style=lineStyle(style_NW))
 
@@ -153,17 +150,15 @@ if barstate.islast and not na(idx1) and not na(idx2)
     raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
          color=col_SE, width=width_SE, style=lineStyle(style_SE))
 
+    // ── Small labels at anchor points for visual confirmation ─────────
+    lbl1 := label.new(idx1, p1, "A1", xloc=xloc.bar_index, style=label.style_circle,
+         color=color.white, textcolor=color.black, size=size.tiny)
+    lbl2 := label.new(idx2, p2, "A2", xloc=xloc.bar_index, style=label.style_circle,
+         color=color.yellow, textcolor=color.black, size=size.tiny)
+
 // ─────────────────────────────────────────────────────────────────────────────
-//  USAGE NOTES
-//
-//  1. Add the indicator to any chart (Pine Editor → Add to chart).
-//  2. TradingView asks you to click TWICE on the chart:
-//        First click  → Anchor 1 (ray origin)
-//        Second click → Anchor 2 (slope reference)
-//     Each click captures both time AND price in one go.
-//  3. Magnetic snap (ON by default) locks each anchor to whichever wick
-//     end (High or Low) is closest to where you clicked. Click near the
-//     bottom wick → snaps to Low. Click near the top wick → snaps to High.
-//  4. To adjust settings later, click the gear icon on the indicator label.
-//
+//  USAGE
+//  1. Add to chart → click twice (Anchor 1, then Anchor 2)
+//  2. Magnetic snap locks to nearest wick (High or Low) based on click
+//  3. Gear icon to adjust slopes, mirrors, colours
 // ─────────────────────────────────────────────────────────────────────────────
