@@ -126,16 +126,31 @@ if barstate.islast and not na(idx1) and not na(idx2)
     // ── Determine if setup is H→L (bearish) for colour inversion ────────
     bool isBearish = p1 > p2
 
-    // ── Resolve effective colours AND visibility (swap for H→L) ────────
-    //    When inverted, colours AND show/hide toggles follow the colour,
-    //    not the direction. So hiding "NE (blue)" always hides the blue ray.
+    // ── Resolve effective style per direction (swap for H→L) ───────────
+    //    When inverted, the "up" rays (NW, NE) swap their ENTIRE appearance
+    //    with the "down" rays (SW, SE). So all settings assigned to a colour
+    //    stay with that colour regardless of direction.
     bool doInvert = invertColors and isBearish
 
+    // Colours
     color useCol_NW  = doInvert ? col_SW : col_NW
     color useCol_NE  = doInvert ? col_SE : col_NE
     color useCol_SW  = doInvert ? col_NW : col_SW
     color useCol_SE  = doInvert ? col_NE : col_SE
 
+    // Widths
+    int useWidth_NW  = doInvert ? width_SW : width_NW
+    int useWidth_NE  = doInvert ? width_SE : width_NE
+    int useWidth_SW  = doInvert ? width_NW : width_SW
+    int useWidth_SE  = doInvert ? width_NE : width_SE
+
+    // Styles
+    string useStyle_NW = doInvert ? style_SW : style_NW
+    string useStyle_NE = doInvert ? style_SE : style_NE
+    string useStyle_SW = doInvert ? style_NW : style_SW
+    string useStyle_SE = doInvert ? style_NE : style_SE
+
+    // Visibility
     bool useShow_NW  = doInvert ? show_SW : show_NW
     bool useShow_NE  = doInvert ? show_SE : show_NE
     bool useShow_SW  = doInvert ? show_NW : show_SW
@@ -174,22 +189,22 @@ if barstate.islast and not na(idx1) and not na(idx2)
     line.delete(raySW)
     line.delete(raySE)
 
-    // ── Draw rays (only if enabled — toggles follow colour, not direction)
+    // ── Draw rays (all settings follow colour, not direction) ──────────
     if useShow_NW
         rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
-             color=useCol_NW, width=width_NW, style=lineStyle(style_NW))
+             color=useCol_NW, width=useWidth_NW, style=lineStyle(useStyle_NW))
 
     if useShow_NE
         rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.none,
-             color=useCol_NE, width=width_NE, style=lineStyle(style_NE))
+             color=useCol_NE, width=useWidth_NE, style=lineStyle(useStyle_NE))
 
     if useShow_SW
         raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.none,
-             color=useCol_SW, width=width_SW, style=lineStyle(style_SW))
+             color=useCol_SW, width=useWidth_SW, style=lineStyle(useStyle_SW))
 
     if useShow_SE
         raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
-             color=useCol_SE, width=width_SE, style=lineStyle(style_SE))
+             color=useCol_SE, width=useWidth_SE, style=lineStyle(useStyle_SE))
 
 
 // ─────────────────────────────────────────────────────────────────────────────
