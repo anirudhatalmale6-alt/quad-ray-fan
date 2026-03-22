@@ -43,21 +43,36 @@ mirror_v_NW_NE = input.bool(false, "Mirror NW / NE  (vertical)", group="Mirror")
 mirror_v_SW_SE = input.bool(false, "Mirror SW / SE  (vertical)", group="Mirror")
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  RAY APPEARANCE
+//  COLOUR INVERSION
+//  When ON, colours auto-swap between "up" and "down" rays depending on
+//  whether the setup is L→H (bullish) or H→L (bearish).
+//  L→H (Anchor 1 below Anchor 2): normal colours
+//  H→L (Anchor 1 above Anchor 2): NW↔SW colours swap, NE↔SE colours swap
 // ─────────────────────────────────────────────────────────────────────────────
 
+invertColors = input.bool(true, "Auto-invert colours for H→L setup", group="Colour Inversion",
+     tooltip="When ON, the colour scheme automatically flips when Anchor 1 is above Anchor 2 (H→L). NW swaps with SW colours, NE swaps with SE colours.")
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  RAY APPEARANCE — colour, width, style & visibility per ray
+// ─────────────────────────────────────────────────────────────────────────────
+
+show_NW  = input.bool(true, "Show NW Ray", group="NW Ray Style")
 col_NW   = input.color(color.red,    "NW — Colour", group="NW Ray Style")
 width_NW = input.int(2, "NW — Width", minval=1, maxval=10, group="NW Ray Style")
 style_NW = input.string("Solid", "NW — Style", options=["Solid", "Dashed", "Dotted"], group="NW Ray Style")
 
+show_NE  = input.bool(true, "Show NE Ray", group="NE Ray Style")
 col_NE   = input.color(color.blue,   "NE — Colour", group="NE Ray Style")
 width_NE = input.int(2, "NE — Width", minval=1, maxval=10, group="NE Ray Style")
 style_NE = input.string("Solid", "NE — Style", options=["Solid", "Dashed", "Dotted"], group="NE Ray Style")
 
+show_SW  = input.bool(true, "Show SW Ray", group="SW Ray Style")
 col_SW   = input.color(color.green,  "SW — Colour", group="SW Ray Style")
 width_SW = input.int(2, "SW — Width", minval=1, maxval=10, group="SW Ray Style")
 style_SW = input.string("Solid", "SW — Style", options=["Solid", "Dashed", "Dotted"], group="SW Ray Style")
 
+show_SE  = input.bool(true, "Show SE Ray", group="SE Ray Style")
 col_SE   = input.color(color.orange, "SE — Colour", group="SE Ray Style")
 width_SE = input.int(2, "SE — Width", minval=1, maxval=10, group="SE Ray Style")
 style_SE = input.string("Solid", "SE — Style", options=["Solid", "Dashed", "Dotted"], group="SE Ray Style")
@@ -108,6 +123,15 @@ if barstate.islast and not na(idx1) and not na(idx2)
     float p1 = snapOn ? magSnap(anchor1_price, highAt1, lowAt1) : anchor1_price
     float p2 = snapOn ? magSnap(anchor2_price, highAt2, lowAt2) : anchor2_price
 
+    // ── Determine if setup is H→L (bearish) for colour inversion ────────
+    bool isBearish = p1 > p2
+
+    // ── Resolve effective colours (swap up/down pairs for H→L) ──────────
+    color useCol_NW = invertColors and isBearish ? col_SW : col_NW
+    color useCol_NE = invertColors and isBearish ? col_SE : col_NE
+    color useCol_SW = invertColors and isBearish ? col_NW : col_SW
+    color useCol_SE = invertColors and isBearish ? col_NE : col_SE
+
     // ── Base slope ─────────────────────────────────────────────────────
     float dBars     = math.max(math.abs(idx2 - idx1), 1)
     float dPrice    = math.abs(p2 - p1)
@@ -120,12 +144,9 @@ if barstate.islast and not na(idx1) and not na(idx2)
     float eff_SE = mirror_h_NE_SE ? (mirror_v_NW_NE ? slope_NW : slope_NE) : (mirror_v_SW_SE ? (mirror_h_NW_SW ? slope_NW : slope_SW) : slope_SE)
 
     // ── Ray endpoints ─────────────────────────────────────────────────
-    //    No extend — draw explicit long lines within TradingView limits.
-    //    Future: max 499 bars.  Past: capped to bar 0 (no negative indices).
     int futureReach = rayLength
     int pastReach   = math.min(rayLength, math.max(idx1, 1))
 
-    // NW = left + up,  NE = right + up,  SW = left + down,  SE = right + down
     int   nw_x2 = idx1 - pastReach
     float nw_y2 = p1 + baseSlope * eff_NW * pastReach
 
@@ -144,19 +165,22 @@ if barstate.islast and not na(idx1) and not na(idx2)
     line.delete(raySW)
     line.delete(raySE)
 
-    // ── Draw rays (no extend — endpoints define full length) ──────────
-    rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
-         color=col_NW, width=width_NW, style=lineStyle(style_NW))
+    // ── Draw rays (only if enabled) ──────────────────────────────────
+    if show_NW
+        rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
+             color=useCol_NW, width=width_NW, style=lineStyle(style_NW))
 
-    rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.none,
-         color=col_NE, width=width_NE, style=lineStyle(style_NE))
+    if show_NE
+        rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.none,
+             color=useCol_NE, width=width_NE, style=lineStyle(style_NE))
 
-    raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.none,
-         color=col_SW, width=width_SW, style=lineStyle(style_SW))
+    if show_SW
+        raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.none,
+             color=useCol_SW, width=width_SW, style=lineStyle(style_SW))
 
-    raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
-         color=col_SE, width=width_SE, style=lineStyle(style_SE))
-
+    if show_SE
+        raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
+             color=useCol_SE, width=width_SE, style=lineStyle(style_SE))
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,4 +188,6 @@ if barstate.islast and not na(idx1) and not na(idx2)
 //  1. Add to chart → click twice (Anchor 1, then Anchor 2)
 //  2. Magnetic snap locks to nearest wick (High or Low) based on click
 //  3. Gear icon to adjust slopes, mirrors, colours
+//  4. Auto-invert: colours swap when Anchor 1 is above Anchor 2 (H→L)
+//  5. Show/hide individual rays with checkboxes in each ray's style group
 // ─────────────────────────────────────────────────────────────────────────────
