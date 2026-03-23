@@ -2,7 +2,7 @@
 // https://mozilla.org/MPL/2.0/
 
 //@version=5
-indicator("Quad-Ray Fan", overlay=true, max_lines_count=4, max_labels_count=1)
+indicator("Quad-Ray Fan", overlay=true, max_lines_count=4)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ANCHOR POINTS — 2 clicks only (time + price captured per click)
@@ -124,7 +124,9 @@ if barstate.islast and not na(idx1) and not na(idx2)
     float p2 = snapOn ? magSnap(anchor2_price, highAt2, lowAt2) : anchor2_price
 
     // ── Determine if setup is H→L (bearish) for colour inversion ────────
-    bool doInvert = invertColors and (p1 > p2)
+    //    Use raw click prices (before snap) so inversion always matches
+    //    the user's click intent regardless of which wick gets snapped to.
+    bool doInvert = invertColors and (anchor1_price > anchor2_price)
 
     // ── Base slope ─────────────────────────────────────────────────────
     float dBars     = math.max(math.abs(idx2 - idx1), 1)
@@ -152,15 +154,6 @@ if barstate.islast and not na(idx1) and not na(idx2)
 
     int   se_x2 = idx1 + futureReach
     float se_y2 = p1 - baseSlope * eff_SE * futureReach
-
-    // ── Debug label — shows inversion state (remove once confirmed) ────
-    var label dbgLbl = na
-    label.delete(dbgLbl)
-    string modeText = doInvert ? "H→L INVERTED" : "L→H NORMAL"
-    string priceText = "p1=" + str.tostring(p1, "#.##") + " p2=" + str.tostring(p2, "#.##")
-    dbgLbl := label.new(idx1, p1, modeText + "\n" + priceText, xloc=xloc.bar_index,
-         style=label.style_label_up, color=doInvert ? color.red : color.green,
-         textcolor=color.white, size=size.normal)
 
     // ── Clean up old drawings ─────────────────────────────────────────
     line.delete(rayNW)
