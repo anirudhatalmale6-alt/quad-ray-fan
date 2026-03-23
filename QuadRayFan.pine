@@ -44,14 +44,16 @@ mirror_v_SW_SE = input.bool(false, "Mirror SW / SE  (vertical)", group="Mirror")
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  COLOUR INVERSION
-//  When ON, colours auto-swap between "up" and "down" rays depending on
-//  whether the setup is L→H (bullish) or H→L (bearish).
-//  L→H (Anchor 1 below Anchor 2): normal colours
-//  H→L (Anchor 1 above Anchor 2): NW↔SW colours swap, NE↔SE colours swap
+//  Swaps NW↔SW and NE↔SE colours so the same colour always represents
+//  the same market meaning regardless of setup direction.
+//  "Auto" tries to detect from anchor prices.
+//  "H→L (invert)" forces inversion.  "L→H (normal)" never inverts.
 // ─────────────────────────────────────────────────────────────────────────────
 
-invertColors = input.bool(true, "Auto-invert colours for H→L setup", group="Colour Inversion",
-     tooltip="When ON, the colour scheme automatically flips when Anchor 1 is above Anchor 2 (H→L). NW swaps with SW colours, NE swaps with SE colours.")
+invertMode = input.string("Auto", "Colour inversion mode",
+     options=["Auto", "H→L (invert)", "L→H (normal)"],
+     group="Colour Inversion",
+     tooltip="Auto: detects from anchor prices. Use H→L or L→H to force the mode if auto-detect doesn't work correctly for your setup.")
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  RAY APPEARANCE — colour, width, style & visibility per ray
@@ -117,83 +119,87 @@ var line rayNE = na
 var line raySW = na
 var line raySE = na
 
-if barstate.islast and not na(idx1) and not na(idx2)
+if barstate.islast and not na(idx1) and not na(idx2) and not na(highAt1) and not na(lowAt1) and not na(highAt2) and not na(lowAt2)
 
     // ── Resolve anchor prices ────────────────────────────────────────────
     float p1 = snapOn ? magSnap(anchor1_price, highAt1, lowAt1) : anchor1_price
     float p2 = snapOn ? magSnap(anchor2_price, highAt2, lowAt2) : anchor2_price
 
-    // ── Determine if setup is H→L (bearish) for colour inversion ────────
-    //    Use raw click prices (before snap) so inversion always matches
-    //    the user's click intent regardless of which wick gets snapped to.
-    bool doInvert = invertColors and (anchor1_price > anchor2_price)
+    // ── Guard: skip if anchors are at defaults (prevents runtime error) ──
+    if p1 != 0.0 and p2 != 0.0
 
-    // ── Base slope ─────────────────────────────────────────────────────
-    float dBars     = math.max(math.abs(idx2 - idx1), 1)
-    float dPrice    = math.abs(p2 - p1)
-    float baseSlope = dPrice / dBars
+        // ── Determine inversion mode ────────────────────────────────────
+        bool doInvert = false
+        if invertMode == "H→L (invert)"
+            doInvert := true
+        else if invertMode == "Auto"
+            doInvert := p1 > p2
 
-    // ── Mirror logic ──────────────────────────────────────────────────
-    float eff_NW = slope_NW
-    float eff_NE = mirror_v_NW_NE ? slope_NW : slope_NE
-    float eff_SW = mirror_h_NW_SW ? slope_NW : slope_SW
-    float eff_SE = mirror_h_NE_SE ? (mirror_v_NW_NE ? slope_NW : slope_NE) : (mirror_v_SW_SE ? (mirror_h_NW_SW ? slope_NW : slope_SW) : slope_SE)
+        // ── Base slope ──────────────────────────────────────────────────
+        float dBars     = math.max(math.abs(idx2 - idx1), 1)
+        float dPrice    = math.abs(p2 - p1)
+        float baseSlope = dPrice / dBars
 
-    // ── Ray endpoints ─────────────────────────────────────────────────
-    int futureReach = rayLength
-    int pastReach   = math.min(rayLength, math.max(idx1, 1))
+        // ── Mirror logic ────────────────────────────────────────────────
+        float eff_NW = slope_NW
+        float eff_NE = mirror_v_NW_NE ? slope_NW : slope_NE
+        float eff_SW = mirror_h_NW_SW ? slope_NW : slope_SW
+        float eff_SE = mirror_h_NE_SE ? (mirror_v_NW_NE ? slope_NW : slope_NE) : (mirror_v_SW_SE ? (mirror_h_NW_SW ? slope_NW : slope_SW) : slope_SE)
 
-    int   nw_x2 = idx1 - pastReach
-    float nw_y2 = p1 + baseSlope * eff_NW * pastReach
+        // ── Ray endpoints ───────────────────────────────────────────────
+        int futureReach = rayLength
+        int pastReach   = math.min(rayLength, math.max(idx1, 1))
 
-    int   ne_x2 = idx1 + futureReach
-    float ne_y2 = p1 + baseSlope * eff_NE * futureReach
+        int   nw_x2 = idx1 - pastReach
+        float nw_y2 = p1 + baseSlope * eff_NW * pastReach
 
-    int   sw_x2 = idx1 - pastReach
-    float sw_y2 = p1 - baseSlope * eff_SW * pastReach
+        int   ne_x2 = idx1 + futureReach
+        float ne_y2 = p1 + baseSlope * eff_NE * futureReach
 
-    int   se_x2 = idx1 + futureReach
-    float se_y2 = p1 - baseSlope * eff_SE * futureReach
+        int   sw_x2 = idx1 - pastReach
+        float sw_y2 = p1 - baseSlope * eff_SW * pastReach
 
-    // ── Clean up old drawings ─────────────────────────────────────────
-    line.delete(rayNW)
-    line.delete(rayNE)
-    line.delete(raySW)
-    line.delete(raySE)
+        int   se_x2 = idx1 + futureReach
+        float se_y2 = p1 - baseSlope * eff_SE * futureReach
 
-    // ── Draw rays ─────────────────────────────────────────────────────
-    //    When doInvert: NW direction uses SW's appearance, and vice versa.
-    //                   NE direction uses SE's appearance, and vice versa.
-    //    This is done with explicit if/else to avoid Pine Script issues
-    //    with conditional variable assignments.
-    if doInvert
-        // INVERTED (H→L): swap up/down appearance AND visibility
-        if show_SW
-            rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
-                 color=col_SW, width=width_SW, style=lineStyle(style_SW))
-        if show_SE
-            rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.none,
-                 color=col_SE, width=width_SE, style=lineStyle(style_SE))
-        if show_NW
-            raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.none,
-                 color=col_NW, width=width_NW, style=lineStyle(style_NW))
-        if show_NE
-            raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
-                 color=col_NE, width=width_NE, style=lineStyle(style_NE))
-    else
-        // NORMAL (L→H): standard appearance
-        if show_NW
-            rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
-                 color=col_NW, width=width_NW, style=lineStyle(style_NW))
-        if show_NE
-            rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.none,
-                 color=col_NE, width=width_NE, style=lineStyle(style_NE))
-        if show_SW
-            raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.none,
-                 color=col_SW, width=width_SW, style=lineStyle(style_SW))
-        if show_SE
-            raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
-                 color=col_SE, width=width_SE, style=lineStyle(style_SE))
+        // ── Clean up old drawings ───────────────────────────────────────
+        line.delete(rayNW)
+        line.delete(rayNE)
+        line.delete(raySW)
+        line.delete(raySE)
+
+        // ── Draw rays ───────────────────────────────────────────────────
+        //    When doInvert: NW direction uses SW's appearance, and vice versa.
+        //                   NE direction uses SE's appearance, and vice versa.
+        //    Show/hide toggles follow the COLOUR identity, not the direction.
+        if doInvert
+            // INVERTED (H→L): swap up/down appearance AND visibility
+            if show_SW
+                rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
+                     color=col_SW, width=width_SW, style=lineStyle(style_SW))
+            if show_SE
+                rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.none,
+                     color=col_SE, width=width_SE, style=lineStyle(style_SE))
+            if show_NW
+                raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.none,
+                     color=col_NW, width=width_NW, style=lineStyle(style_NW))
+            if show_NE
+                raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
+                     color=col_NE, width=width_NE, style=lineStyle(style_NE))
+        else
+            // NORMAL (L→H): standard appearance
+            if show_NW
+                rayNW := line.new(idx1, p1, nw_x2, nw_y2, xloc=xloc.bar_index, extend=extend.none,
+                     color=col_NW, width=width_NW, style=lineStyle(style_NW))
+            if show_NE
+                rayNE := line.new(idx1, p1, ne_x2, ne_y2, xloc=xloc.bar_index, extend=extend.none,
+                     color=col_NE, width=width_NE, style=lineStyle(style_NE))
+            if show_SW
+                raySW := line.new(idx1, p1, sw_x2, sw_y2, xloc=xloc.bar_index, extend=extend.none,
+                     color=col_SW, width=width_SW, style=lineStyle(style_SW))
+            if show_SE
+                raySE := line.new(idx1, p1, se_x2, se_y2, xloc=xloc.bar_index, extend=extend.none,
+                     color=col_SE, width=width_SE, style=lineStyle(style_SE))
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -201,6 +207,7 @@ if barstate.islast and not na(idx1) and not na(idx2)
 //  1. Add to chart → click twice (Anchor 1, then Anchor 2)
 //  2. Magnetic snap locks to nearest wick (High or Low) based on click
 //  3. Gear icon to adjust slopes, mirrors, colours
-//  4. Auto-invert: colours swap when Anchor 1 is above Anchor 2 (H→L)
-//  5. Show/hide individual rays with checkboxes in each ray's style group
+//  4. Colour inversion: set to "H→L (invert)" for bearish setups,
+//     "L→H (normal)" for bullish, or "Auto" to detect automatically
+//  5. Show/hide individual rays — toggles follow colour identity when inverted
 // ─────────────────────────────────────────────────────────────────────────────
